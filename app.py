@@ -4,6 +4,12 @@ from pptx.util import Inches, Pt
 from moviepy.editor import ImageClip, concatenate_videoclips, TextClip, CompositeVideoClip, AudioFileClip
 from gtts import gTTS
 from PIL import Image
+
+# --- EL TRUCO PARA QUE MOVIEPY FUNCIONE CON EL NUEVO PILLOW ---
+if not hasattr(Image, 'ANTIALIAS'):
+    Image.ANTIALIAS = Image.LANCZOS
+# --------------------------------------------------------------
+
 import io
 import tempfile
 import os
