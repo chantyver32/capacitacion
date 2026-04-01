@@ -2,162 +2,118 @@ import streamlit as st
 import barcode
 from barcode.writer import ImageWriter
 import io
-import base64
-import streamlit.components.v1 as components
+from docx import Document
+from docx.shared import Cm, Pt
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+import urllib.parse
 
 # Configuración de la página
-st.set_page_config(page_title="Generador de Accesos", layout="centered")
+st.set_page_config(page_title="Generador de Etiquetas", layout="centered")
 
-st.title("Generador de Código de Barras Elegante")
-st.write("Ingresa el texto para generar la tarjeta de acceso imprimible.")
+st.title("Generador de Etiquetas 🏷️")
+st.write("Ingresa el Nombre del Producto y su Código separados por una coma (,).")
 
-# Controles de Streamlit
-texto_entrada = st.text_input("Código o texto (letras y números):", value="ESTRELLA-2026")
+# Área de texto con un ejemplo predeterminado
+texto_entrada = st.text_area(
+    "Formato: Nombre del Producto, CÓDIGO", 
+    value="Jabón de Avena, JAB-001\nShampoo de Coco, SHA-002\nCrema Corporal, CREM-003",
+    height=150
+)
 
-if texto_entrada:
-    # 1. Generar el código de barras (Formato Code128)
-    code128 = barcode.get_barcode_class('code128')
-    
-    # Usamos un buffer de memoria en lugar de guardar un archivo físico
-    buffer = io.BytesIO()
-    
-    # Generar la imagen con un diseño limpio
-    mi_codigo = code128(texto_entrada, writer=ImageWriter())
-    mi_codigo.write(buffer, options={
-        'module_width': 0.25,
-        'module_height': 10,
-        'font_size': 8,
-        'text_distance': 4,
-        'quiet_zone': 2
-    })
-    
-    # 2. Convertir la imagen a Base64 para incrustarla en HTML
-    img_str = base64.b64encode(buffer.getvalue()).decode("utf-8")
-    img_data_uri = f"data:image/png;base64,{img_str}"
-
-    # 3. Plantilla Elegante (HTML/CSS)
-    html_template = f"""
-    <!DOCTYPE html>
-    <html lang="es">
-    <head>
-        <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Lato:wght@300;400&display=swap" rel="stylesheet">
-        <style>
-            :root {{
-                --gold: #c5a059;
-                --dark: #222222;
-                --bg: #fcfcfc;
-            }}
-            body {{
-                font-family: 'Lato', sans-serif;
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                margin: 0;
-                padding: 20px;
-                background-color: transparent;
-            }}
-            .elegant-card {{
-                border: 2px solid var(--gold);
-                padding: 4px;
-                width: 450px;
-                height: 300px;
-                background: var(--bg);
-                box-sizing: border-box;
-                margin-bottom: 20px;
-            }}
-            .elegant-inner {{
-                border: 1px solid var(--gold);
-                height: 100%;
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                justify-content: center;
-                padding: 20px;
-                box-sizing: border-box;
-                text-align: center;
-            }}
-            .elegant-title {{
-                font-family: 'Playfair Display', serif;
-                font-size: 22px;
-                color: var(--dark);
-                margin-bottom: 5px;
-                text-transform: uppercase;
-                letter-spacing: 2px;
-            }}
-            .elegant-subtitle {{
-                font-family: 'Playfair Display', serif;
-                font-style: italic;
-                font-size: 14px;
-                color: #666;
-                margin-bottom: 20px;
-            }}
-            .barcode-container {{
-                background: white;
-                padding: 10px 20px;
-                border: 1px solid #eee;
-                box-shadow: 0 4px 10px rgba(0,0,0,0.03);
-                display: flex;
-                justify-content: center;
-            }}
-            .barcode-container img {{
-                max-width: 100%;
-                height: auto;
-            }}
-            .elegant-footer {{
-                font-size: 11px;
-                color: var(--dark);
-                margin-top: 20px;
-                letter-spacing: 1px;
-                text-transform: uppercase;
-            }}
-            .print-btn {{
-                background-color: var(--gold);
-                color: white;
-                border: none;
-                padding: 12px 24px;
-                border-radius: 5px;
-                cursor: pointer;
-                font-size: 16px;
-                font-family: 'Lato', sans-serif;
-                transition: background 0.3s;
-            }}
-            .print-btn:hover {{
-                background-color: #a88544;
-            }}
-            /* Estilos específicos para la hora de imprimir */
-            @media print {{
-                body {{
-                    padding: 0;
-                    margin: 0;
-                    background: white;
-                }}
-                .print-btn {{
-                    display: none !important; /* Oculta el botón al imprimir */
-                }}
-                .elegant-card {{
-                    margin: 0 auto; /* Centra la tarjeta en la hoja impresa */
-                }}
-            }}
-        </style>
-    </head>
-    <body>
-        <div class="elegant-card">
-            <div class="elegant-inner">
-                <div class="elegant-title">Código de Acceso</div>
-                <div class="elegant-subtitle">Presente este código al ingresar</div>
-                
-                <div class="barcode-container">
-                    <img src="{img_data_uri}" alt="Código de Barras">
-                </div>
-                
-                <div class="elegant-footer">Documento Oficial</div>
-            </div>
-        </div>
+if st.button("Generar Archivo Word"):
+    if texto_entrada.strip():
+        # Crear documento de Word
+        doc = Document()
         
-        <button class="print-btn" onclick="window.print()">🖨️ Imprimir Plantilla</button>
-    </body>
-    </html>
-    """
+        # Procesar línea por línea
+        lineas = [linea.strip() for linea in texto_entrada.split('\n') if linea.strip()]
+        
+        # Clase del código de barras (Code128 acepta letras y números)
+        code128 = barcode.get_barcode_class('code128')
+        
+        tarjetas_creadas = 0
+        
+        for linea in lineas:
+            # Verificar que haya una coma para separar nombre y código
+            if "," in linea:
+                partes = linea.split(",", 1)
+                nombre_producto = partes[0].strip()
+                codigo_barras = partes[1].strip()
+                
+                # 1. Generar la imagen del código de barras
+                buffer = io.BytesIO()
+                mi_codigo = code128(codigo_barras, writer=ImageWriter())
+                
+                # Desactivamos el texto de la imagen para ponerlo nosotros en negritas en Word
+                mi_codigo.write(buffer, options={
+                    'write_text': False, 
+                    'module_width': 0.3,
+                    'module_height': 12,
+                    'quiet_zone': 2
+                })
+                buffer.seek(0)
+                
+                # 2. Diseñar la tarjeta en Word
+                p = doc.add_paragraph()
+                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                
+                # Nombre del Producto en Negritas
+                run_nombre = p.add_run(f"{nombre_producto}\n")
+                run_nombre.bold = True
+                run_nombre.font.size = Pt(16)
+                
+                # Insertar la imagen del código de barras (5x3 cm)
+                run_img = p.add_run()
+                run_img.add_picture(buffer, width=Cm(5), height=Cm(3))
+                
+                # Texto del Código de Barras en Negritas
+                run_codigo = p.add_run(f"\n{codigo_barras}\n")
+                run_codigo.bold = True
+                run_codigo.font.size = Pt(14)
+                
+                # Separador visual entre tarjetas
+                p.add_run("-" * 40 + "\n").font.size = Pt(8)
+                
+                tarjetas_creadas += 1
 
-    # 4. Mostrar el HTML dentro de Streamlit
-    components.html(html_template, height=450)
+        if tarjetas_creadas > 0:
+            # Guardar Word en memoria
+            doc_buffer = io.BytesIO()
+            doc.save(doc_buffer)
+            doc_buffer.seek(0)
+            
+            st.success(f"¡Éxito! Se generaron {tarjetas_creadas} etiquetas.")
+            
+            # Contenedor para alinear los botones
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Botón para descargar el Word
+                st.download_button(
+                    label="📥 Descargar Word",
+                    data=doc_buffer,
+                    file_name="etiquetas_productos.docx",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                )
+            
+            with col2:
+                # Configurar enlace a WhatsApp (Número con Lada de México: 52 + 2283530069)
+                numero_wa = "522283530069"
+                mensaje = urllib.parse.quote("Hola, aquí tienes el archivo con las etiquetas generadas.")
+                link_wa = f"https://wa.me/{numero_wa}?text={mensaje}"
+                
+                # Botón HTML personalizado para WhatsApp
+                st.markdown(
+                    f"""
+                    <a href="{link_wa}" target="_blank" style="text-decoration: none;">
+                        <button style="background-color: #25D366; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-weight: bold; width: 100%;">
+                            📱 Enviar por WhatsApp
+                        </button>
+                    </a>
+                    """, 
+                    unsafe_allow_html=True
+                )
+        else:
+            st.error("Por favor, asegúrate de usar el formato correcto: Nombre, Código")
+    else:
+        st.warning("El campo de texto está vacío.")
