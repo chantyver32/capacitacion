@@ -1,115 +1,163 @@
 import streamlit as st
-import datetime
-import pandas as pd
+import barcode
+from barcode.writer import ImageWriter
+import io
+import base64
+import streamlit.components.v1 as components
 
 # Configuración de la página
-st.set_page_config(page_title="Checklist con Alarmas", page_icon="✅", layout="centered")
+st.set_page_config(page_title="Generador de Accesos", layout="centered")
 
-# URLs de los sonidos (puedes cambiarlos por archivos locales o enlaces propios)
-SONIDO_EXITO = "https://www.soundjay.com/buttons/sounds/button-09.mp3"
-SONIDO_ALARMA = "https://www.soundjay.com/misc/sounds/bell-ringing-05.mp3"
+st.title("Generador de Código de Barras Elegante")
+st.write("Ingresa el texto para generar la tarjeta de acceso imprimible.")
 
-# Inicializar la base de datos temporal en session_state
-if "tareas" not in st.session_state:
-    st.session_state.tareas = []
+# Controles de Streamlit
+texto_entrada = st.text_input("Código o texto (letras y números):", value="ESTRELLA-2026")
 
-st.title("✅ Checklist Interactivo")
-st.markdown("Añade tus tareas, define una hora de aviso y escucha el sonido al completarlas.")
-
-# ==========================================
-# 1. FORMULARIO PARA AGREGAR TAREAS
-# ==========================================
-with st.form("nueva_tarea_form", clear_on_submit=True):
-    col1, col2 = st.columns([3, 1])
-    with col1:
-        nueva_tarea = st.text_input("Nueva tarea", placeholder="Ej. Revisar inventario de vitrinas...")
-    with col2:
-        hora_alarma = st.time_input("Hora de alarma", datetime.datetime.now().time())
+if texto_entrada:
+    # 1. Generar el código de barras (Formato Code128)
+    code128 = barcode.get_barcode_class('code128')
     
-    submit = st.form_submit_button("Agregar Tarea")
+    # Usamos un buffer de memoria en lugar de guardar un archivo físico
+    buffer = io.BytesIO()
     
-    if submit and nueva_tarea:
-        st.session_state.tareas.append({
-            "id": len(st.session_state.tareas),
-            "texto": nueva_tarea,
-            "completada": False,
-            "hora_alarma": hora_alarma.strftime("%H:%M")
-        })
-        st.success("Tarea agregada")
-
-st.divider()
-
-# ==========================================
-# 2. MOSTRAR EL CHECKLIST
-# ==========================================
-if not st.session_state.tareas:
-    st.info("No hay tareas pendientes. ¡Agrega una arriba!")
-else:
-    # Reproductor de sonido oculto para las tareas completadas
-    reproducir_exito = st.empty()
+    # Generar la imagen con un diseño limpio
+    mi_codigo = code128(texto_entrada, writer=ImageWriter())
+    mi_codigo.write(buffer, options={
+        'module_width': 0.25,
+        'module_height': 10,
+        'font_size': 8,
+        'text_distance': 4,
+        'quiet_zone': 2
+    })
     
-    for i, tarea in enumerate(st.session_state.tareas):
-        col_check, col_hora, col_del = st.columns([8, 2, 1])
-        
-        with col_check:
-            # Usamos un key único para cada checkbox
-            check = st.checkbox(tarea["texto"], value=tarea["completada"], key=f"check_{i}")
-            
-            # Si el estado del checkbox cambia a True (completado)
-            if check and not tarea["completada"]:
-                st.session_state.tareas[i]["completada"] = True
-                # Inyectar audio que se reproduce automáticamente
-                reproducir_exito.markdown(
-                    f'<audio autoplay="true" src="{SONIDO_EXITO}"></audio>', 
-                    unsafe_allow_html=True
-                )
-            # Si se desmarca
-            elif not check and tarea["completada"]:
-                st.session_state.tareas[i]["completada"] = False
+    # 2. Convertir la imagen a Base64 para incrustarla en HTML
+    img_str = base64.b64encode(buffer.getvalue()).decode("utf-8")
+    img_data_uri = f"data:image/png;base64,{img_str}"
 
-        with col_hora:
-            st.write(f"⏰ {tarea['hora_alarma']}")
-            
-        with col_del:
-            if st.button("❌", key=f"del_{i}"):
-                st.session_state.tareas.pop(i)
-                st.rerun()
-
-# ==========================================
-# 3. LÓGICA DE ALARMAS EN TIEMPO REAL (JavaScript)
-# ==========================================
-# Extraemos las alarmas de las tareas que NO están completadas
-alarmas_pendientes = [t["hora_alarma"] for t in st.session_state.tareas if not t["completada"]]
-
-# Inyectamos JavaScript para que el navegador verifique la hora cada segundo
-# y reproduzca el sonido si coincide con alguna de las alarmas pendientes.
-js_code = f"""
-<script>
-    const alarmas = {alarmas_pendientes};
-    const sonidoAlarma = new Audio("{SONIDO_ALARMA}");
-    let alarmasReproducidas = [];
-
-    setInterval(() => {{
-        let ahora = new Date();
-        // Formatear hora a HH:MM para que coincida con Python
-        let horas = String(ahora.getHours()).padStart(2, '0');
-        let minutos = String(ahora.getMinutes()).padStart(2, '0');
-        let horaActual = `${{horas}}:${{minutos}}`;
-
-        if (alarmas.includes(horaActual) && !alarmasReproducidas.includes(horaActual)) {{
-            sonidoAlarma.play();
-            alarmasReproducidas.push(horaActual); // Evitar que suene varias veces en el mismo minuto
-        }}
-        
-        // Limpiar el registro si cambiamos de minuto para que funcione al día siguiente
-        if (!alarmas.includes(horaActual)) {{
-            let index = alarmasReproducidas.indexOf(horaActual);
-            if (index > -1) {{
-                alarmasReproducidas.splice(index, 1);
+    # 3. Plantilla Elegante (HTML/CSS)
+    html_template = f"""
+    <!DOCTYPE html>
+    <html lang="es">
+    <head>
+        <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Lato:wght@300;400&display=swap" rel="stylesheet">
+        <style>
+            :root {{
+                --gold: #c5a059;
+                --dark: #222222;
+                --bg: #fcfcfc;
             }}
-        }}
-    }}, 1000); // Se ejecuta cada 1000 milisegundos (1 segundo)
-</script>
-"""
+            body {{
+                font-family: 'Lato', sans-serif;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                margin: 0;
+                padding: 20px;
+                background-color: transparent;
+            }}
+            .elegant-card {{
+                border: 2px solid var(--gold);
+                padding: 4px;
+                width: 450px;
+                height: 300px;
+                background: var(--bg);
+                box-sizing: border-box;
+                margin-bottom: 20px;
+            }}
+            .elegant-inner {{
+                border: 1px solid var(--gold);
+                height: 100%;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                padding: 20px;
+                box-sizing: border-box;
+                text-align: center;
+            }}
+            .elegant-title {{
+                font-family: 'Playfair Display', serif;
+                font-size: 22px;
+                color: var(--dark);
+                margin-bottom: 5px;
+                text-transform: uppercase;
+                letter-spacing: 2px;
+            }}
+            .elegant-subtitle {{
+                font-family: 'Playfair Display', serif;
+                font-style: italic;
+                font-size: 14px;
+                color: #666;
+                margin-bottom: 20px;
+            }}
+            .barcode-container {{
+                background: white;
+                padding: 10px 20px;
+                border: 1px solid #eee;
+                box-shadow: 0 4px 10px rgba(0,0,0,0.03);
+                display: flex;
+                justify-content: center;
+            }}
+            .barcode-container img {{
+                max-width: 100%;
+                height: auto;
+            }}
+            .elegant-footer {{
+                font-size: 11px;
+                color: var(--dark);
+                margin-top: 20px;
+                letter-spacing: 1px;
+                text-transform: uppercase;
+            }}
+            .print-btn {{
+                background-color: var(--gold);
+                color: white;
+                border: none;
+                padding: 12px 24px;
+                border-radius: 5px;
+                cursor: pointer;
+                font-size: 16px;
+                font-family: 'Lato', sans-serif;
+                transition: background 0.3s;
+            }}
+            .print-btn:hover {{
+                background-color: #a88544;
+            }}
+            /* Estilos específicos para la hora de imprimir */
+            @media print {{
+                body {{
+                    padding: 0;
+                    margin: 0;
+                    background: white;
+                }}
+                .print-btn {{
+                    display: none !important; /* Oculta el botón al imprimir */
+                }}
+                .elegant-card {{
+                    margin: 0 auto; /* Centra la tarjeta en la hoja impresa */
+                }}
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="elegant-card">
+            <div class="elegant-inner">
+                <div class="elegant-title">Código de Acceso</div>
+                <div class="elegant-subtitle">Presente este código al ingresar</div>
+                
+                <div class="barcode-container">
+                    <img src="{img_data_uri}" alt="Código de Barras">
+                </div>
+                
+                <div class="elegant-footer">Documento Oficial</div>
+            </div>
+        </div>
+        
+        <button class="print-btn" onclick="window.print()">🖨️ Imprimir Plantilla</button>
+    </body>
+    </html>
+    """
 
-st.components.v1.html(js_code, height=0, width=0)
+    # 4. Mostrar el HTML dentro de Streamlit
+    components.html(html_template, height=450)
