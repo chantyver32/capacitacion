@@ -5,115 +5,102 @@ import io
 from docx import Document
 from docx.shared import Cm, Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-import urllib.parse
 
-# Configuración de la página
-st.set_page_config(page_title="Generador de Etiquetas", layout="centered")
+# Configuración de la página Streamlit
+st.set_page_config(page_title="Generador de Etiquetas Compactas", layout="centered")
 
 st.title("Generador de Etiquetas 🏷️")
-st.write("Ingresa el Nombre del Producto y su Código separados por una coma (,).")
+st.write("Copia y pega tu lista de productos aquí:")
 
-# Área de texto con un ejemplo predeterminado
-texto_entrada = st.text_area(
-    "Formato: Nombre del Producto, CÓDIGO", 
-    value="Jabón de Avena, JAB-001\nShampoo de Coco, SHA-002\nCrema Corporal, CREM-003",
-    height=150
-)
+# Lista de tus productos cargada por defecto
+productos_default = """Americano 210 ml $25, CFAMEGR
+Americano 315 ml $32, CFAMG
+Expresso 90 ml $28, CFEPRG
+Té de Manzanilla 315 ml $32, TMLA
+Capuchino 210 ml $38, CFDCF
+Capuchino 315 ml $54, CFDGG
+Lechero 210 ml $38, CFDLG
+Lechero 315 ml $54, CFDLC
+Latte Caramel Toffe 315 ml $54, CCTFFD
+Latte Arroz con Leche 315 ml $54, ARLTTE
+Latte Chai 315 ml $57, CFMDL
+Latte Canela 315 ml $59, LTTECANDESC
+Extra Extracto de Café 18 gr $18, CEXCAF
+Extra Crema Batida 15 gr $12, CREMEXT
+Extra Leche Deslactosada 60 ml $6, EXTLDES
+Extra Jarabe Canela 25 ml $18, EXTRJCNL"""
 
-if st.button("Generar Archivo Word"):
+texto_entrada = st.text_area("Formato: Nombre, Código", value=productos_default, height=250)
+
+if st.button("Generar Hoja de Etiquetas"):
     if texto_entrada.strip():
-        # Crear documento de Word
         doc = Document()
         
-        # Procesar línea por línea
-        lineas = [linea.strip() for linea in texto_entrada.split('\n') if linea.strip()]
+        # --- AJUSTES DE MARGENES PARA APROVECHAR LA HOJA ---
+        section = doc.sections[0]
+        section.top_margin = Cm(1)
+        section.bottom_margin = Cm(1)
+        section.left_margin = Cm(1)
+        section.right_margin = Cm(1)
+
+        lineas = [linea.strip() for linea in texto_entrada.split('\n') if "," in linea]
         
-        # Clase del código de barras (Code128 acepta letras y números)
-        code128 = barcode.get_barcode_class('code128')
-        
-        tarjetas_creadas = 0
-        
-        for linea in lineas:
-            # Verificar que haya una coma para separar nombre y código
-            if "," in linea:
-                partes = linea.split(",", 1)
-                nombre_producto = partes[0].strip()
-                codigo_barras = partes[1].strip()
+        if lineas:
+            # Crear tabla (3 columnas para que quepan todas en una fila)
+            num_columnas = 3
+            num_filas = (len(lineas) + num_columnas - 1) // num_columnas
+            tabla = doc.add_table(rows=num_filas, cols=num_columnas)
+            tabla.autofit = True
+
+            code128 = barcode.get_barcode_class('code128')
+
+            for index, linea in enumerate(lineas):
+                fila_idx = index // num_columnas
+                col_idx = index % num_columnas
+                celda = tabla.cell(fila_idx, col_idx)
                 
-                # 1. Generar la imagen del código de barras
+                nombre_producto, codigo_barras = [p.strip() for p in linea.split(",", 1)]
+
+                # Generar código de barras
                 buffer = io.BytesIO()
                 mi_codigo = code128(codigo_barras, writer=ImageWriter())
-                
-                # Desactivamos el texto de la imagen para ponerlo nosotros en negritas en Word
                 mi_codigo.write(buffer, options={
                     'write_text': False, 
-                    'module_width': 0.3,
-                    'module_height': 12,
-                    'quiet_zone': 2
+                    'module_width': 0.2, # Más delgado
+                    'module_height': 8,   # Más bajo
+                    'quiet_zone': 1
                 })
                 buffer.seek(0)
-                
-                # 2. Diseñar la tarjeta en Word
-                p = doc.add_paragraph()
+
+                # Formato dentro de la celda
+                p = celda.paragraphs[0]
                 p.alignment = WD_ALIGN_PARAGRAPH.CENTER
                 
-                # Nombre del Producto en Negritas
+                # --- NOMBRE DEL PRODUCTO EN NEGRITAS ---
                 run_nombre = p.add_run(f"{nombre_producto}\n")
                 run_nombre.bold = True
-                run_nombre.font.size = Pt(16)
+                run_nombre.font.size = Pt(10) # Un poco más grande para resaltar
                 
-                # Insertar la imagen del código de barras (5x3 cm)
+                # Imagen (Tamaño reducido)
                 run_img = p.add_run()
-                run_img.add_picture(buffer, width=Cm(5), height=Cm(3))
+                run_img.add_picture(buffer, width=Cm(4), height=Cm(1.8))
                 
-                # Texto del Código de Barras en Negritas
-                run_codigo = p.add_run(f"\n{codigo_barras}\n")
-                run_codigo.bold = True
-                run_codigo.font.size = Pt(14)
-                
-                # Separador visual entre tarjetas
-                p.add_run("-" * 40 + "\n").font.size = Pt(8)
-                
-                tarjetas_creadas += 1
+                # --- CÓDIGO SIN NEGRITAS ---
+                run_codigo = p.add_run(f"\n{codigo_barras}")
+                run_codigo.bold = False # Texto normal para crear contraste
+                run_codigo.font.size = Pt(8)
 
-        if tarjetas_creadas > 0:
-            # Guardar Word en memoria
+            # Guardar y descargar
             doc_buffer = io.BytesIO()
             doc.save(doc_buffer)
             doc_buffer.seek(0)
             
-            st.success(f"¡Éxito! Se generaron {tarjetas_creadas} etiquetas.")
-            
-            # Contenedor para alinear los botones
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                # Botón para descargar el Word
-                st.download_button(
-                    label="📥 Descargar Word",
-                    data=doc_buffer,
-                    file_name="etiquetas_productos.docx",
-                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                )
-            
-            with col2:
-                # Configurar enlace a WhatsApp (Número con Lada de México: 52 + 2283530069)
-                numero_wa = "522283530069"
-                mensaje = urllib.parse.quote("Hola, aquí tienes el archivo con las etiquetas generadas.")
-                link_wa = f"https://wa.me/{numero_wa}?text={mensaje}"
-                
-                # Botón HTML personalizado para WhatsApp
-                st.markdown(
-                    f"""
-                    <a href="{link_wa}" target="_blank" style="text-decoration: none;">
-                        <button style="background-color: #25D366; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-weight: bold; width: 100%;">
-                            📱 Enviar por WhatsApp
-                        </button>
-                    </a>
-                    """, 
-                    unsafe_allow_html=True
-                )
-        else:
-            st.error("Por favor, asegúrate de usar el formato correcto: Nombre, Código")
+            st.success(f"Se acomodaron {len(lineas)} etiquetas en una cuadrícula.")
+            st.download_button(
+                label="📥 Descargar Word (1 Hoja)",
+                data=doc_buffer,
+                file_name="etiquetas_compactas.docx",
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            )
     else:
-        st.warning("El campo de texto está vacío.")
+        st.error("No hay datos para procesar.")
